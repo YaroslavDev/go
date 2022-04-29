@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"internal/testenv"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -38,6 +39,7 @@ func TestEverything(t *testing.T) {
 	Float64("test_float64", 0, "float64 value")
 	Duration("test_duration", 0, "time.Duration value")
 	Func("test_func", "func value", func(string) error { return nil })
+	URL("test_url", url.URL{}, "url.URL value")
 
 	m := make(map[string]*Flag)
 	desired := "0"
@@ -53,6 +55,8 @@ func TestEverything(t *testing.T) {
 			case f.Name == "test_duration" && f.Value.String() == desired+"s":
 				ok = true
 			case f.Name == "test_func" && f.Value.String() == "":
+				ok = true
+			case f.Name == "test_url" && f.Value.String() == "":
 				ok = true
 			}
 			if !ok {
@@ -85,6 +89,7 @@ func TestEverything(t *testing.T) {
 	Set("test_float64", "1")
 	Set("test_duration", "1s")
 	Set("test_func", "1")
+	Set("test_url", "1")
 	desired = "1"
 	Visit(visitor)
 	if len(m) != 9 {
@@ -111,6 +116,7 @@ func TestGet(t *testing.T) {
 	String("test_string", "5", "string value")
 	Float64("test_float64", 6, "float64 value")
 	Duration("test_duration", 7, "time.Duration value")
+	URL("test_url", "8", "url.URL value")
 
 	visitor := func(f *Flag) {
 		if len(f.Name) > 5 && f.Name[0:5] == "test_" {
@@ -136,6 +142,8 @@ func TestGet(t *testing.T) {
 				ok = g.Get() == float64(6)
 			case "test_duration":
 				ok = g.Get() == time.Duration(7)
+			case "test_url":
+				ok = g.Get() == url.URL{Path: "8"}
 			}
 			if !ok {
 				t.Errorf("Visit: bad value %T(%v) for %s", g.Get(), g.Get(), f.Name)
@@ -169,6 +177,7 @@ func testParse(f *FlagSet, t *testing.T) {
 	stringFlag := f.String("string", "0", "string value")
 	float64Flag := f.Float64("float64", 0, "float64 value")
 	durationFlag := f.Duration("duration", 5*time.Second, "time.Duration value")
+	urlFlag := f.URL("url", url.URL{Path: "/foo"}, "url.URL value")
 	extra := "one-extra-argument"
 	args := []string{
 		"-bool",
@@ -180,6 +189,7 @@ func testParse(f *FlagSet, t *testing.T) {
 		"-string", "hello",
 		"-float64", "2718e28",
 		"-duration", "2m",
+		"-url", "bar",
 		extra,
 	}
 	if err := f.Parse(args); err != nil {
@@ -214,6 +224,10 @@ func testParse(f *FlagSet, t *testing.T) {
 	}
 	if *durationFlag != 2*time.Minute {
 		t.Error("duration flag should be 2m, is ", *durationFlag)
+	}
+	expectedURL := url.URL{Path: "bar"}
+	if *urlFlag != expectedURL {
+		t.Error("url flag should be bar, is ", *urlFlag)
 	}
 	if len(f.Args()) != 1 {
 		t.Error("expected one argument, got", len(f.Args()))
@@ -481,6 +495,8 @@ const defaultOutput = `  -A	for bootstrapping, allow 'any' type
     	a flag whose String method panics when it is zero
   -maxT timeout
     	set timeout for dial
+  -U url
+		a url that defaults to foo
 
 panic calling String method on zero flag_test.zeroPanicker for flag ZP0: panic!
 panic calling String method on zero flag_test.zeroPanicker for flag ZP1: panic!
@@ -505,6 +521,7 @@ func TestPrintDefaults(t *testing.T) {
 	fs.Var(&zeroPanicker{true, ""}, "ZP0", "a flag whose String method panics when it is zero")
 	fs.Var(&zeroPanicker{true, "something"}, "ZP1", "a flag whose String method panics when it is zero")
 	fs.Duration("maxT", 0, "set `timeout` for dial")
+	fs.URL("U", url.URL{Path: "foo"}, "a url that defaults to foo")
 	fs.PrintDefaults()
 	got := buf.String()
 	if got != defaultOutput {
@@ -576,7 +593,7 @@ func TestGetters(t *testing.T) {
 }
 
 func TestParseError(t *testing.T) {
-	for _, typ := range []string{"bool", "int", "int64", "uint", "uint64", "float64", "duration"} {
+	for _, typ := range []string{"bool", "int", "int64", "uint", "uint64", "float64", "duration", "url"} {
 		fs := NewFlagSet("parse error test", ContinueOnError)
 		fs.SetOutput(io.Discard)
 		_ = fs.Bool("bool", false, "")
@@ -586,6 +603,7 @@ func TestParseError(t *testing.T) {
 		_ = fs.Uint64("uint64", 0, "")
 		_ = fs.Float64("float64", 0, "")
 		_ = fs.Duration("duration", 0, "")
+		_ = fs.URL("url", url.URL{}, "")
 		// Strings cannot give errors.
 		args := []string{"-" + typ + "=x"}
 		err := fs.Parse(args) // x is not a valid setting for any flag.
@@ -624,6 +642,17 @@ func TestRangeError(t *testing.T) {
 		if !strings.Contains(err.Error(), "invalid") || !strings.Contains(err.Error(), "value out of range") {
 			t.Errorf("Parse(%q)=%v; expected range error", arg, err)
 		}
+	}
+}
+
+func TestURLError(t *testing.T) {
+	fs := NewFlagSet("parse error test", ContinueOnError)
+	fs.URL("url", url.URL{}, "")
+
+	err := fs.Parse([]string{"://"})
+
+	if err == nil || !strings.Contains(err.Error(), `parse "://": missing protocol scheme`) {
+		t.Errorf("Parse(://) expected parse error")
 	}
 }
 

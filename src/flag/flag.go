@@ -86,6 +86,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -335,6 +336,27 @@ type funcValue func(string) error
 func (f funcValue) Set(s string) error { return f(s) }
 
 func (f funcValue) String() string { return "" }
+
+// -- url.URL Value
+type urlValue url.URL
+
+func newURLValue(val url.URL, p *url.URL) *urlValue {
+	*p = val
+	return (*urlValue)(p)
+}
+
+func (u *urlValue) Set(s string) error {
+	v, err := url.Parse(s)
+	if err != nil {
+		err = errParse
+	}
+	*u = urlValue(*v)
+	return err
+}
+
+func (u *urlValue) Get() any { return url.URL(*u) }
+
+func (u *urlValue) String() string { return (*url.URL)(u).String() }
 
 // Value is the interface to the dynamic value stored in a flag.
 // (The default value is represented as a string.)
@@ -950,6 +972,36 @@ func (f *FlagSet) Func(name, usage string, fn func(string) error) {
 // If fn returns a non-nil error, it will be treated as a flag value parsing error.
 func Func(name, usage string, fn func(string) error) {
 	CommandLine.Func(name, usage, fn)
+}
+
+// URLVar defines a url.URL flag with specified name, default value, and usage string.
+// The argument p points to a url.URL variable in which to store the value of the flag.
+// The flag accepts a value acceptable to url.Parse.
+func (f *FlagSet) URLVar(p *url.URL, name string, value url.URL, usage string) {
+	f.Var(newURLValue(value, p), name, usage)
+}
+
+// URLVar defines a url.URL flag with specified name, default value, and usage string.
+// The argument p points to a url.URL variable in which to store the value of the flag.
+// The flag accepts a value acceptable to url.Parse.
+func URLVar(p *url.URL, name string, value url.URL, usage string) {
+	CommandLine.Var(newURLValue(value, p), name, usage)
+}
+
+// URL defines a url.URL flag with specified name, default value, and usage string.
+// The return value is the address of a url.URL variable that stores the value of the flag.
+// The flag accepts a value acceptable to url.Parse.
+func (f *FlagSet) URL(name string, value url.URL, usage string) *url.URL {
+	p := new(url.URL)
+	f.URLVar(p, name, value, usage)
+	return p
+}
+
+// URL defines a url.URL flag with specified name, default value, and usage string.
+// The return value is the address of a url.URL variable that stores the value of the flag.
+// The flag accepts a value acceptable to url.Parse.
+func URL(name string, value url.URL, usage string) *url.URL {
+	return CommandLine.URL(name, value, usage)
 }
 
 // Var defines a flag with the specified name and usage string. The type and
